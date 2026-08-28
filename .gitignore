@@ -25,3 +25,4 @@ Front/dist/
 # ===== 日志 / 运行时 =====
 logs/
 *.log
+/.workbuddy/
