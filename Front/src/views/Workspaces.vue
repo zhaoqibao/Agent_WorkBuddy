@@ -6,23 +6,21 @@
     </div>
 
     <el-row :gutter="16">
-      <el-col v-for="ws in list" :key="ws.id" :span="8">
-        <el-card class="ws-card" shadow="hover">
+      <el-col v-for="ws in store.list" :key="ws.id" :span="8">
+        <el-card class="ws-card" :class="{ active: ws.id === store.activeId }" shadow="hover"
+          @click="store.setActive(ws.id)">
           <div class="ws-title">
             <span class="name">{{ ws.name }}</span>
-            <el-tag v-if="ws.is_default" size="small" type="success">默认</el-tag>
+            <el-tag v-if="ws.id === store.activeId" size="small" type="primary">当前</el-tag>
           </div>
           <p class="ws-desc">{{ ws.description || '暂无描述' }}</p>
           <div class="ws-actions">
-            <el-button size="small" @click="openEdit(ws)">编辑</el-button>
-            <el-button size="small" type="success" plain @click="setDefault(ws)">
-              设为默认
-            </el-button>
-            <el-button size="small" type="danger" plain @click="remove(ws)">删除</el-button>
+            <el-button size="small" @click.stop="openEdit(ws)">编辑</el-button>
+            <el-button size="small" type="danger" plain @click.stop="remove(ws)">删除</el-button>
           </div>
         </el-card>
       </el-col>
-      <el-col :span="8" v-if="!list.length">
+      <el-col :span="8" v-if="!store.list.length">
         <el-empty description="还没有工作空间，点击右上角新建" />
       </el-col>
     </el-row>
@@ -48,14 +46,15 @@
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { workspaceApi } from '@/api'
+import { useWorkspaceStore } from '@/stores/workspace'
 
-const list = ref([])
+const store = useWorkspaceStore()
 const dialogVisible = ref(false)
 const saving = ref(false)
 const form = reactive({ id: null, name: '', description: '' })
 
 async function load() {
-  list.value = await workspaceApi.list()
+  await store.load()
 }
 
 function openCreate() {
@@ -85,12 +84,6 @@ async function save() {
   }
 }
 
-async function setDefault(ws) {
-  await workspaceApi.update(ws.id, { is_default: true })
-  ElMessage.success('已设为默认')
-  load()
-}
-
 async function remove(ws) {
   await ElMessageBox.confirm(`确定删除空间「${ws.name}」吗？`, '提示', { type: 'warning' })
   await workspaceApi.remove(ws.id)
@@ -103,7 +96,9 @@ onMounted(load)
 
 <style scoped>
 .page-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-.ws-card { margin-bottom: 16px; }
+.ws-card { margin-bottom: 16px; cursor: pointer; border: 1px solid var(--border); transition: border-color 0.2s, box-shadow 0.2s; }
+.ws-card:hover { border-color: var(--primary); }
+.ws-card.active { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-soft); }
 .ws-title { display: flex; align-items: center; gap: 8px; }
 .ws-title .name { font-weight: 600; font-size: 16px; }
 .ws-desc { color: var(--muted); min-height: 40px; }

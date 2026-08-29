@@ -1,7 +1,9 @@
 """资料库条目 CRUD。"""
 from __future__ import annotations
 
-from fastapi import APIRouter
+from datetime import datetime
+
+from fastapi import APIRouter, HTTPException
 from sqlalchemy import select
 
 from app.core.response import ok
@@ -42,7 +44,6 @@ async def delete_knowledge(kd_id: int, current: CurrentUser, db: DBDep):
     kd = await db.get(KnowledgeDoc, kd_id)
     if not kd or kd.deleted_at is not None or kd.user_id != current.id:
         raise HTTPException(status_code=404, detail="资料不存在")
-    import datetime
-    kd.deleted_at = datetime.datetime.utcnow()
+    kd.deleted_at = datetime.utcnow()
     await db.commit()
     return ok(message="已删除")

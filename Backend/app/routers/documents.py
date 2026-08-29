@@ -48,7 +48,7 @@ def extract_text(filename: str, data: bytes) -> str:
 @router.post("/upload")
 async def upload(
     file: UploadFile = File(...),
-    workspace_id: int = Form(...),
+    workspace_id: int | None = Form(None),
     knowledge_doc_id: int | None = Form(None),
     current: CurrentUser = None,
     db: DBDep = None,
@@ -61,7 +61,7 @@ async def upload(
     if len(data) > MAX_BYTES:
         raise HTTPException(status_code=400, detail="文件超过 20MB 限制")
 
-    # 若无知识库条目则自动创建
+    # 若无知识库条目则自动创建（资料库全局共享，workspace_id 可为空）
     if knowledge_doc_id is None:
         kd = KnowledgeDoc(user_id=current.id, workspace_id=workspace_id,
                           title=file.filename)
@@ -69,7 +69,7 @@ async def upload(
         await db.flush()
         knowledge_doc_id = kd.id
 
-    key = f"ws-{workspace_id}/u-{current.id}/{uuid.uuid4().hex}.{ext}"
+    key = f"ws-{workspace_id or 'global'}/u-{current.id}/{uuid.uuid4().hex}.{ext}"
     put_object(key, data, len(data), file.content_type or "application/octet-stream")
 
     text = extract_text(file.filename, data)

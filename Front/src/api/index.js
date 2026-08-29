@@ -28,6 +28,7 @@ export const taskApi = {
   create: (body) => request.post('/api/tasks', body),
   update: (id, body) => request.put(`/api/tasks/${id}`, body),
   remove: (id) => request.delete(`/api/tasks/${id}`),
+  stats: (workspaceId) => request.get('/api/tasks/stats', { params: { workspace_id: workspaceId } }),
 }
 
 export const conversationApi = {

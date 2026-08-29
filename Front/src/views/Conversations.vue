@@ -2,10 +2,7 @@
   <div class="conv-page">
     <div class="conv-side">
       <div class="side-head">
-        <el-select v-model="wsId" placeholder="选择空间" @change="load">
-          <el-option v-for="w in workspaces" :key="w.id" :label="w.name" :value="w.id" />
-        </el-select>
-        <el-button type="primary" class="new-btn" :disabled="!wsId" @click="openCreate">
+        <el-button type="primary" class="new-btn" :disabled="!store.activeId" @click="openCreate">
           新建会话
         </el-button>
       </div>
@@ -124,11 +121,11 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { agentApi, conversationApi, documentApi, streamChat, workspaceApi } from '@/api'
+import { agentApi, conversationApi, documentApi, streamChat } from '@/api'
+import { useWorkspaceStore } from '@/stores/workspace'
 
-const workspaces = ref([])
+const store = useWorkspaceStore()
 const agents = ref([])
-const wsId = ref(null)
 const list = ref([])
 const currentId = ref(null)
 const messages = ref([])
@@ -145,18 +142,15 @@ const fileInput = ref(null)
 
 const canSend = computed(() => (!!input.value.trim() || !!attachment.value) && !sending.value)
 
-async function loadWorkspaces() {
-  workspaces.value = await workspaceApi.list()
-  if (!wsId.value && workspaces.value.length) wsId.value = workspaces.value[0].id
-}
-
 async function loadAgents() {
   agents.value = await agentApi.list()
 }
 
 async function load() {
-  if (!wsId.value) return
-  list.value = await conversationApi.list(wsId.value)
+  if (!store.activeId) return
+  list.value = await conversationApi.list(store.activeId)
+  // 按更新时间降序，最近的会话排在最前
+  list.value.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at))
 }
 
 function openCreate() {
@@ -166,7 +160,7 @@ function openCreate() {
 }
 
 async function doCreate() {
-  const body = { workspace_id: wsId.value, agent_id: createForm.agent_id || null }
+  const body = { workspace_id: store.activeId, agent_id: createForm.agent_id || null }
   if (createForm.title) body.title = createForm.title
   const c = await conversationApi.create(body)
   createVisible.value = false
@@ -182,7 +176,7 @@ async function openConversation(c) {
 }
 
 function triggerFile() {
-  if (!wsId.value) return ElMessage.warning('请先选择工作空间')
+  if (!store.activeId) return ElMessage.warning('请先到「工作空间」页激活一个空间')
   fileInput.value?.click()
 }
 
@@ -192,7 +186,7 @@ async function onFileChange(e) {
   try {
     const fd = new FormData()
     fd.append('file', f)
-    fd.append('workspace_id', wsId.value)
+    if (store.activeId) fd.append('workspace_id', store.activeId)
     const doc = await documentApi.upload(fd)
     attachment.value = { name: doc.original_name, id: doc.id }
     ElMessage.success('文件已上传，可附带发送')
@@ -323,9 +317,13 @@ function scrollBottom(force = false) {
 }
 
 onMounted(async () => {
-  await loadWorkspaces()
+  await store.load()
   await loadAgents()
   await load()
+  // 自动恢复最近的会话历史
+  if (!currentId.value && list.value.length) {
+    await openConversation(list.value[0])
+  }
 })
 </script>
 

@@ -3,14 +3,11 @@
     <div class="page-head">
       <h2>任务</h2>
       <div class="head-right">
-        <el-select v-model="wsId" placeholder="选择工作空间" style="width:180px" @change="load">
-          <el-option v-for="w in workspaces" :key="w.id" :label="w.name" :value="w.id" />
-        </el-select>
-        <el-button type="primary" :disabled="!wsId" @click="openCreate">新建任务</el-button>
+        <el-button type="primary" :disabled="!store.activeId" @click="openCreate">新建任务</el-button>
       </div>
     </div>
 
-    <el-empty v-if="!wsId" description="请先选择工作空间" />
+    <el-empty v-if="!store.activeId" description="请先到「工作空间」页点击卡片激活一个空间" />
     <el-table v-else :data="list" style="width:100%">
       <el-table-column label="标题" min-width="220">
         <template #default="{ row }">
@@ -19,27 +16,27 @@
           </span>
         </template>
       </el-table-column>
-      <el-table-column label="状态" width="110">
+      <el-table-column label="状态" width="110" align="center">
         <template #default="{ row }">
           <el-tag :type="['info', 'warning', 'success'][row.status]" size="small">
             {{ ['待办', '进行中', '已完成'][row.status] }}
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="优先级" width="100">
+      <el-table-column label="优先级" width="100" align="center">
         <template #default="{ row }">
           <el-tag :type="['info', 'warning', 'danger'][row.priority]" size="small" effect="plain">
             {{ ['低', '中', '高'][row.priority] }}
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="截止时间" width="160">
+      <el-table-column label="截止时间" width="160" align="center">
         <template #default="{ row }">{{ row.due_date ? row.due_date.slice(0, 10) : '—' }}</template>
       </el-table-column>
-      <el-table-column label="操作" width="220" fixed="right">
+      <el-table-column label="操作" width="220" fixed="right" align="center">
         <template #default="{ row }">
-          <el-button size="small" @click="toggleStatus(row)">完成</el-button>
-          <el-button size="small" @click="openEdit(row)">编辑</el-button>
+          <el-button size="small" @click="toggleStatus(row)">{{ row.status === 2 ? '取消完成' : '完成' }}</el-button>
+          <el-button size="small" :disabled="row.status === 2" @click="openEdit(row)">编辑</el-button>
           <el-button size="small" type="danger" plain @click="remove(row)">删除</el-button>
         </template>
       </el-table-column>
@@ -76,23 +73,21 @@
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { taskApi, workspaceApi } from '@/api'
+import { taskApi } from '@/api'
+import { useTaskStore } from '@/stores/tasks'
+import { useWorkspaceStore } from '@/stores/workspace'
 
-const workspaces = ref([])
-const wsId = ref(null)
+const store = useWorkspaceStore()
 const list = ref([])
 const dialogVisible = ref(false)
 const saving = ref(false)
 const form = reactive({ id: null, title: '', description: '', priority: 1 })
-
-async function loadWorkspaces() {
-  workspaces.value = await workspaceApi.list()
-  if (!wsId.value && workspaces.value.length) wsId.value = workspaces.value[0].id
-}
+const taskStore = useTaskStore()
 
 async function load() {
-  if (!wsId.value) return
-  list.value = await taskApi.list(wsId.value)
+  if (!store.activeId) return
+  list.value = await taskApi.list(store.activeId)
+  taskStore.refresh(store.activeId)
 }
 
 function openCreate() {
@@ -101,6 +96,7 @@ function openCreate() {
 }
 
 function openEdit(t) {
+  if (t.status === 2) return ElMessage.warning('已完成的任务不允许编辑')
   Object.assign(form, {
     id: t.id,
     title: t.title,
@@ -120,7 +116,7 @@ async function save() {
     if (form.id) {
       await taskApi.update(form.id, body)
     } else {
-      await taskApi.create({ workspace_id: wsId.value, ...body })
+      await taskApi.create({ workspace_id: store.activeId, ...body })
     }
     dialogVisible.value = false
     ElMessage.success('已保存')
@@ -143,7 +139,7 @@ async function remove(t) {
 }
 
 onMounted(async () => {
-  await loadWorkspaces()
+  await store.load()
   await load()
 })
 </script>

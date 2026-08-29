@@ -7,7 +7,12 @@
       </div>
       <el-menu :default-active="active" router class="menu">
         <el-menu-item index="/workspaces"><el-icon><Folder /></el-icon><span>工作空间</span></el-menu-item>
-        <el-menu-item index="/tasks"><el-icon><List /></el-icon><span>任务</span></el-menu-item>
+        <el-menu-item index="/tasks">
+          <el-icon><List /></el-icon>
+          <el-badge :value="taskStore.urgentCount" :hidden="taskStore.urgentCount === 0" type="danger" :max="99">
+            <span>任务</span>
+          </el-badge>
+        </el-menu-item>
         <el-menu-item index="/agents"><el-icon><MagicStick /></el-icon><span>Agent</span></el-menu-item>
         <el-menu-item index="/conversations"><el-icon><ChatDotRound /></el-icon><span>会话</span></el-menu-item>
         <el-menu-item index="/knowledge"><el-icon><Files /></el-icon><span>资料库</span></el-menu-item>
@@ -32,21 +37,35 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
+import { useTaskStore } from '@/stores/tasks'
+import { useWorkspaceStore } from '@/stores/workspace'
 
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 const theme = useThemeStore()
+const taskStore = useTaskStore()
+const workspaceStore = useWorkspaceStore()
 const active = computed(() => route.path)
 
 function logout() {
   auth.logout()
   router.push('/login')
 }
+
+onMounted(async () => {
+  await workspaceStore.load()
+  await taskStore.refresh(workspaceStore.activeId)
+})
+
+// 切换激活空间时，角标跟随当前空间的任务数量
+watch(() => workspaceStore.activeId, (id) => {
+  taskStore.refresh(id)
+})
 </script>
 
 <style scoped>
@@ -60,6 +79,9 @@ function logout() {
 .menu :deep(.el-menu-item) { border-radius: 10px; margin-bottom: 4px; height: 44px; }
 .menu :deep(.el-menu-item.is-active) { background: var(--primary-soft); color: var(--primary); font-weight: 600; }
 .menu :deep(.el-menu-item:hover) { background: var(--hover-bg); }
+/* 角标紧贴文字 */
+.menu :deep(.el-menu-item .el-badge) { line-height: 1; }
+.menu :deep(.el-menu-item .el-badge__content) { transform: translate(140%, -45%) scale(1); }
 .sidebar-footer { padding: 14px 16px; border-top: 1px solid var(--border); }
 .theme-btn { font-size: 14px; height: 34px; padding: 0 12px; display: inline-flex; align-items: center; gap: 5px; color: var(--text); }
 .theme-btn .el-icon { font-size: 16px; }

@@ -78,6 +78,9 @@ Agent_WorkBuddy/
 
 ## 快速启动
 
+
+> 首次使用前请先完成「初始化数据库」和依赖安装（`uv sync`、`cd Front && npm install`）。脚本会自动跳过已在运行的端口。
+
 ### 1. 初始化数据库（首次）
 
 ```bash

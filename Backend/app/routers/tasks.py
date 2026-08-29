@@ -3,8 +3,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from fastapi import APIRouter
-from sqlalchemy import select
+from fastapi import APIRouter, HTTPException
+from sqlalchemy import func, select
 
 from app.core.response import ok
 from app.deps import CurrentUser, DBDep
@@ -12,6 +12,21 @@ from app.models import Task
 from app.schemas import TaskCreate, TaskOut, TaskUpdate
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
+
+
+@router.get("/stats")
+async def task_stats(workspace_id: int | None = None, current: CurrentUser = None, db: DBDep = None):
+    """统计中/高优先级且未完成的任务数量（默认按当前工作空间，供侧边栏角标）。"""
+    stmt = select(func.count()).select_from(Task).where(
+        Task.user_id == current.id,
+        Task.deleted_at.is_(None),
+        Task.status != 2,
+        Task.priority >= 1,
+    )
+    if workspace_id is not None:
+        stmt = stmt.where(Task.workspace_id == workspace_id)
+    count = (await db.scalar(stmt)) or 0
+    return ok({"urgent_count": count})
 
 
 @router.get("")

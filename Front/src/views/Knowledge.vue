@@ -3,23 +3,19 @@
     <div class="page-head">
       <h2>资料库</h2>
       <div class="head-right">
-        <el-select v-model="wsId" placeholder="选择空间" style="width:180px" @change="load">
-          <el-option v-for="w in workspaces" :key="w.id" :label="w.name" :value="w.id" />
-        </el-select>
-        <el-button type="primary" :disabled="!wsId" @click="openCreate">新建条目</el-button>
+        <el-button type="primary" @click="openCreate">新建条目</el-button>
       </div>
     </div>
 
-    <el-empty v-if="!wsId" description="请先选择工作空间" />
-    <el-row v-else :gutter="16">
-      <el-col v-for="k in list" :key="k.id" :span="12">
+    <el-row :gutter="16">
+      <el-col v-for="k in list" :key="k.id" :span="8">
         <el-card class="k-card" shadow="hover">
           <div class="k-head">
             <span class="k-title">{{ k.title }}</span>
             <el-tag v-if="k.category" size="small">{{ k.category }}</el-tag>
           </div>
           <div class="k-actions">
-            <el-button size="small" @click="toggleDocs(k)">文档</el-button>
+            <el-button size="small" type="primary" plain @click="toggleDocs(k)">文档</el-button>
             <el-upload :show-file-list="false" :http-request="(opt) => doUpload(opt, k)"
               accept=".docx,.xlsx,.pdf,.txt,.md,.csv">
               <el-button size="small" type="primary" plain>上传</el-button>
@@ -35,8 +31,10 @@
           </div>
         </el-card>
       </el-col>
-      <el-col :span="12" v-if="!list.length">
-        <el-empty description="还没有资料，点击右上角新建" />
+      <el-col :span="24" v-if="!list.length">
+        <div class="empty-wrap">
+          <el-empty description="还没有资料，点击右上角新建" />
+        </div>
       </el-col>
     </el-row>
 
@@ -60,10 +58,10 @@
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { documentApi, knowledgeApi, workspaceApi } from '@/api'
+import { documentApi, knowledgeApi } from '@/api'
+import { useWorkspaceStore } from '@/stores/workspace'
 
-const workspaces = ref([])
-const wsId = ref(null)
+const store = useWorkspaceStore()
 const list = ref([])
 const docs = ref({})
 const expandedId = ref(null)
@@ -71,14 +69,9 @@ const dialogVisible = ref(false)
 const saving = ref(false)
 const form = reactive({ title: '', category: '' })
 
-async function loadWorkspaces() {
-  workspaces.value = await workspaceApi.list()
-  if (!wsId.value && workspaces.value.length) wsId.value = workspaces.value[0].id
-}
-
 async function load() {
-  if (!wsId.value) return
-  list.value = await knowledgeApi.list(wsId.value)
+  // 资料库全局共享，不按工作空间过滤
+  list.value = await knowledgeApi.list()
 }
 
 function openCreate() {
@@ -90,7 +83,7 @@ async function save() {
   if (!form.title) return ElMessage.warning('请输入标题')
   saving.value = true
   try {
-    await knowledgeApi.create({ workspace_id: wsId.value, title: form.title, category: form.category })
+    await knowledgeApi.create({ title: form.title, category: form.category })
     dialogVisible.value = false
     ElMessage.success('已创建')
     load()
@@ -111,8 +104,8 @@ async function toggleDocs(k) {
 async function doUpload(opt, k) {
   const fd = new FormData()
   fd.append('file', opt.file)
-  fd.append('workspace_id', wsId.value)
   fd.append('knowledge_doc_id', k.id)
+  if (store.activeId) fd.append('workspace_id', store.activeId)
   try {
     await documentApi.upload(fd)
     ElMessage.success('上传成功')
@@ -123,16 +116,17 @@ async function doUpload(opt, k) {
 }
 
 async function remove(k) {
-  await ElMessageBox.confirm(`确定删除「${k.title}」吗？`, '提示', { type: 'warning' })
+  await ElMessageBox.confirm(`确定删除「${k.title}」吗？`, '提示', {
+    type: 'warning',
+    confirmButtonText: '确认',
+    cancelButtonText: '取消',
+  })
   await knowledgeApi.remove(k.id)
   ElMessage.success('已删除')
   load()
 }
 
-onMounted(async () => {
-  await loadWorkspaces()
-  await load()
-})
+onMounted(load)
 </script>
 
 <style scoped>
@@ -145,4 +139,5 @@ onMounted(async () => {
 .docs { margin-top: 12px; border-top: 1px dashed var(--border); padding-top: 8px; }
 .doc-item { display: flex; justify-content: space-between; padding: 6px 0; font-size: 13px; }
 .doc-meta { color: var(--muted); }
+.empty-wrap { display: flex; justify-content: center; align-items: center; min-height: 55vh; }
 </style>

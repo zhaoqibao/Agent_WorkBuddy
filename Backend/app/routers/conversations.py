@@ -30,6 +30,7 @@ async def list_conversations(current: CurrentUser, db: DBDep, workspace_id: int 
     )
     if workspace_id is not None:
         stmt = stmt.where(Conversation.workspace_id == workspace_id)
+    stmt = stmt.order_by(Conversation.updated_at.desc())
     rows = (await db.scalars(stmt)).all()
     return ok([ConversationOut.model_validate(r).model_dump() for r in rows])
 
