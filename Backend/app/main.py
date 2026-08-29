@@ -8,6 +8,7 @@ from fastapi import HTTPException
 
 from app.core.config import settings
 from app.routers import (
+    agents,
     auth,
     conversations,
     documents,
@@ -46,6 +47,7 @@ async def health():
 
 for r in (
     auth.router,
+    agents.router,
     workspaces.router,
     tasks.router,
     conversations.router,

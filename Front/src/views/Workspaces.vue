@@ -106,6 +106,6 @@ onMounted(load)
 .ws-card { margin-bottom: 16px; }
 .ws-title { display: flex; align-items: center; gap: 8px; }
 .ws-title .name { font-weight: 600; font-size: 16px; }
-.ws-desc { color: #888; min-height: 40px; }
+.ws-desc { color: var(--muted); min-height: 40px; }
 .ws-actions { margin-top: 8px; }
 </style>

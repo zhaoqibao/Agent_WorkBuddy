@@ -10,6 +10,7 @@ const routes = [
     children: [
       { path: 'workspaces', component: () => import('@/views/Workspaces.vue'), name: 'workspaces' },
       { path: 'tasks', component: () => import('@/views/Tasks.vue'), name: 'tasks' },
+      { path: 'agents', component: () => import('@/views/Agents.vue'), name: 'agents' },
       { path: 'conversations', component: () => import('@/views/Conversations.vue'), name: 'conversations' },
       { path: 'knowledge', component: () => import('@/views/Knowledge.vue'), name: 'knowledge' },
       { path: 'profile', component: () => import('@/views/Profile.vue'), name: 'profile' },

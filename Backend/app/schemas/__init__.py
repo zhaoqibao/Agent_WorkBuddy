@@ -128,16 +128,51 @@ class TaskOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+# ---------- Agent ----------
+class AgentCreate(BaseModel):
+    name: str = Field(..., max_length=128)
+    description: Optional[str] = Field(None, max_length=500)
+    system_prompt: Optional[str] = None
+    model: Optional[str] = None
+    tools: Optional[list] = None
+    workspace_id: Optional[int] = None
+
+
+class AgentUpdate(BaseModel):
+    name: Optional[str] = Field(None, max_length=128)
+    description: Optional[str] = Field(None, max_length=500)
+    system_prompt: Optional[str] = None
+    model: Optional[str] = None
+    tools: Optional[list] = None
+
+
+class AgentOut(BaseModel):
+    id: int
+    user_id: int
+    workspace_id: Optional[int] = None
+    name: str
+    description: Optional[str] = None
+    system_prompt: Optional[str] = None
+    model: Optional[str] = None
+    tools: Optional[list] = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 # ---------- 会话 ----------
 class ConversationCreate(BaseModel):
     title: Optional[str] = None
     workspace_id: Optional[int] = None
+    agent_id: Optional[int] = None
 
 
 class ConversationOut(BaseModel):
     id: int
     user_id: int
     workspace_id: Optional[int] = None
+    agent_id: Optional[int] = None
     title: str
     model: Optional[str] = None
     summary: Optional[str] = None

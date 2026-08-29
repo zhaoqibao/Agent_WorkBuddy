@@ -14,7 +14,7 @@
     <el-table v-else :data="list" style="width:100%">
       <el-table-column label="标题" min-width="220">
         <template #default="{ row }">
-          <span :style="row.status === 2 ? 'text-decoration:line-through;color:#999' : ''">
+          <span :style="row.status === 2 ? 'text-decoration:line-through;color:var(--muted)' : ''">
             {{ row.title }}
           </span>
         </template>

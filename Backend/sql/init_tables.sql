@@ -73,11 +73,32 @@ CREATE TABLE IF NOT EXISTS `tasks` (
   CONSTRAINT `fk_task_user` FOREIGN KEY (`user_id`)      REFERENCES `users` (`id`)      ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='任务表';
 
+-- ---------- Agent（智能体） ----------
+CREATE TABLE IF NOT EXISTS `agents` (
+  `id`            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `user_id`       BIGINT UNSIGNED NOT NULL,
+  `workspace_id`  BIGINT UNSIGNED NULL     DEFAULT NULL,
+  `name`          VARCHAR(128) NOT NULL               COMMENT 'Agent 名称',
+  `description`   VARCHAR(500) NULL     DEFAULT NULL  COMMENT '描述',
+  `system_prompt` TEXT         NULL                   COMMENT '系统提示词',
+  `model`         VARCHAR(64)  NULL     DEFAULT NULL  COMMENT '使用的模型',
+  `tools`         JSON         NULL     DEFAULT NULL  COMMENT '启用的工具名列表',
+  `created_at`    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at`    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `deleted_at`    DATETIME     NULL     DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_agent_user` (`user_id`),
+  KEY `idx_agent_ws` (`workspace_id`),
+  CONSTRAINT `fk_agent_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_agent_ws`   FOREIGN KEY (`workspace_id`) REFERENCES `workspaces` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Agent 智能体';
+
 -- ---------- 会话与消息 ----------
 CREATE TABLE IF NOT EXISTS `conversations` (
   `id`            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   `user_id`       BIGINT UNSIGNED NOT NULL,
   `workspace_id`  BIGINT UNSIGNED NULL     DEFAULT NULL,
+  `agent_id`      BIGINT UNSIGNED NULL     DEFAULT NULL,
   `title`         VARCHAR(255) NOT NULL DEFAULT '新会话' COMMENT '会话标题（可自动生成）',
   `model`         VARCHAR(64)  NULL     DEFAULT NULL  COMMENT '使用的模型',
   `summary`       VARCHAR(500) NULL     DEFAULT NULL  COMMENT '摘要',
@@ -87,8 +108,10 @@ CREATE TABLE IF NOT EXISTS `conversations` (
   PRIMARY KEY (`id`),
   KEY `idx_user` (`user_id`),
   KEY `idx_ws` (`workspace_id`),
-  CONSTRAINT `fk_conv_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
-  CONSTRAINT `fk_conv_ws`   FOREIGN KEY (`workspace_id`) REFERENCES `workspaces` (`id`) ON DELETE SET NULL
+  KEY `idx_agent` (`agent_id`),
+  CONSTRAINT `fk_conv_user`  FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_conv_ws`    FOREIGN KEY (`workspace_id`) REFERENCES `workspaces` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_conv_agent` FOREIGN KEY (`agent_id`) REFERENCES `agents` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='会话表';
 
 CREATE TABLE IF NOT EXISTS `messages` (

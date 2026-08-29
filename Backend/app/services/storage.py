@@ -38,5 +38,18 @@ def get_presigned_url(key: str, expires_minutes: int = 15) -> str:
     )
 
 
+def get_object(key: str) -> bytes:
+    """下载对象内容为字节（用于文档转换/解析）。"""
+    try:
+        resp = client.get_object(settings.MINIO_BUCKET, key)
+        return resp.read()
+    finally:
+        try:
+            resp.close()
+            resp.release_conn()
+        except Exception:
+            pass
+
+
 def delete_object(key: str):
     client.remove_object(settings.MINIO_BUCKET, key)

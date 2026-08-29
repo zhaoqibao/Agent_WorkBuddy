@@ -94,12 +94,35 @@ class Task(Base):
     )
 
 
+class Agent(Base):
+    __tablename__ = "agents"
+
+    id: Mapped[int] = ubigint(primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(BIGINT(unsigned=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    workspace_id: Mapped[Optional[int]] = mapped_column(BIGINT(unsigned=True), ForeignKey("workspaces.id", ondelete="SET NULL"), nullable=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    system_prompt: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    model: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    tools: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    __table_args__ = (
+        Index("idx_agent_user", "user_id"),
+        Index("idx_agent_ws", "workspace_id"),
+    )
+
+
 class Conversation(Base):
     __tablename__ = "conversations"
 
     id: Mapped[int] = ubigint(primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(BIGINT(unsigned=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     workspace_id: Mapped[Optional[int]] = mapped_column(BIGINT(unsigned=True), ForeignKey("workspaces.id", ondelete="SET NULL"), nullable=True)
+    agent_id: Mapped[Optional[int]] = mapped_column(BIGINT(unsigned=True), ForeignKey("agents.id", ondelete="SET NULL"), nullable=True)
     title: Mapped[str] = mapped_column(String(255), default="新会话", nullable=False)
     model: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     summary: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)

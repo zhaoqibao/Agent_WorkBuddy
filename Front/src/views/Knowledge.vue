@@ -142,7 +142,7 @@ onMounted(async () => {
 .k-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .k-title { font-weight: 600; font-size: 15px; }
 .k-actions { display: flex; align-items: center; gap: 8px; }
-.docs { margin-top: 12px; border-top: 1px dashed #eee; padding-top: 8px; }
+.docs { margin-top: 12px; border-top: 1px dashed var(--border); padding-top: 8px; }
 .doc-item { display: flex; justify-content: space-between; padding: 6px 0; font-size: 13px; }
-.doc-meta { color: #999; }
+.doc-meta { color: var(--muted); }
 </style>
