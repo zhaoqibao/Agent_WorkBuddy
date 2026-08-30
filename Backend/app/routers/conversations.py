@@ -75,7 +75,13 @@ async def delete_conversation(conv_id: int, current: CurrentUser, db: DBDep):
     conv = await db.get(Conversation, conv_id)
     if not conv or conv.deleted_at is not None or conv.user_id != current.id:
         raise HTTPException(status_code=404, detail="会话不存在")
-    conv.deleted_at = datetime.utcnow()
+    # 物理删除会话历史（消息）+ 会话本身
+    msgs = (await db.scalars(
+        select(Message).where(Message.conversation_id == conv_id)
+    )).all()
+    for m in msgs:
+        await db.delete(m)
+    await db.delete(conv)
     await db.commit()
     return ok(message="已删除")
 

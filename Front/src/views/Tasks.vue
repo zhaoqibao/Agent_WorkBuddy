@@ -35,7 +35,9 @@
       </el-table-column>
       <el-table-column label="操作" width="220" fixed="right" align="center">
         <template #default="{ row }">
-          <el-button size="small" @click="toggleStatus(row)">{{ row.status === 2 ? '取消完成' : '完成' }}</el-button>
+          <el-button size="small" :disabled="row.status === 2" @click="toggleStatus(row)">
+            {{ row.status === 2 ? '已完成' : '完成' }}
+          </el-button>
           <el-button size="small" :disabled="row.status === 2" @click="openEdit(row)">编辑</el-button>
           <el-button size="small" type="danger" plain @click="remove(row)">删除</el-button>
         </template>
@@ -127,7 +129,8 @@ async function save() {
 }
 
 async function toggleStatus(t) {
-  await taskApi.update(t.id, { status: t.status === 2 ? 0 : 2 })
+  if (t.status === 2) return ElMessage.warning('已完成的任务不可取消完成')
+  await taskApi.update(t.id, { status: 2 })
   load()
 }
 

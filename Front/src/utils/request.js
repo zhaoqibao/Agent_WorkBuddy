@@ -4,7 +4,7 @@ import router from '@/router'
 
 const request = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000',
-  timeout: 15000,
+  timeout: 300000,
 })
 
 request.interceptors.request.use((config) => {

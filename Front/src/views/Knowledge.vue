@@ -16,8 +16,7 @@
           </div>
           <div class="k-actions">
             <el-button size="small" type="primary" plain @click="toggleDocs(k)">文档</el-button>
-            <el-upload :show-file-list="false" :http-request="(opt) => doUpload(opt, k)"
-              accept=".docx,.xlsx,.pdf,.txt,.md,.csv">
+            <el-upload :show-file-list="false" :http-request="(opt) => doUpload(opt, k)">
               <el-button size="small" type="primary" plain>上传</el-button>
             </el-upload>
             <el-button size="small" type="danger" plain @click="remove(k)">删除</el-button>

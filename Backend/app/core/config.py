@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import Any, List, Optional
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from dotenv import load_dotenv
+load_dotenv()
 
 # 项目根目录：config.py 位于 Backend/app/core/config.py
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent

@@ -72,6 +72,6 @@ async def delete_task(task_id: int, current: CurrentUser, db: DBDep):
     task = await db.get(Task, task_id)
     if not task or task.deleted_at is not None or task.user_id != current.id:
         raise HTTPException(status_code=404, detail="任务不存在")
-    task.deleted_at = datetime.utcnow()
+    await db.delete(task)  # 物理删除
     await db.commit()
     return ok(message="已删除")

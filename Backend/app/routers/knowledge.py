@@ -8,8 +8,9 @@ from sqlalchemy import select
 
 from app.core.response import ok
 from app.deps import CurrentUser, DBDep
-from app.models import KnowledgeDoc
+from app.models import Document, KnowledgeDoc
 from app.schemas import KnowledgeCreate, KnowledgeOut
+from app.services.storage import delete_object
 
 router = APIRouter(prefix="/api/knowledge", tags=["knowledge"])
 
@@ -44,6 +45,17 @@ async def delete_knowledge(kd_id: int, current: CurrentUser, db: DBDep):
     kd = await db.get(KnowledgeDoc, kd_id)
     if not kd or kd.deleted_at is not None or kd.user_id != current.id:
         raise HTTPException(status_code=404, detail="资料不存在")
-    kd.deleted_at = datetime.utcnow()
+    # 物理删除该条目下的所有文档 + 条目本身，并清理 MinIO 文件
+    docs = (await db.scalars(
+        select(Document).where(Document.knowledge_doc_id == kd_id)
+    )).all()
+    for d in docs:
+        if d.stored_path:
+            try:
+                delete_object(d.stored_path)
+            except Exception:
+                pass  # MinIO 删除失败不影响数据库删除
+        await db.delete(d)
+    await db.delete(kd)
     await db.commit()
     return ok(message="已删除")

@@ -10,9 +10,39 @@ import io
 import json
 
 import httpx
+from langchain_core.messages import HumanMessage
+from langchain_openai import ChatOpenAI
 
 from app.core.config import settings
 from app.models import Document
+
+
+# ---------- VLM 统一调用（langchain_openai ChatOpenAI） ----------
+def _vlm_client() -> ChatOpenAI:
+    return ChatOpenAI(
+        model=settings.BASE_VLM,
+        api_key=settings.OPENAI_API_KEY,
+        base_url=settings.MODEL_API_BASE_URL,
+        timeout=90,
+        max_retries=1,
+        temperature=0,
+    )
+
+
+async def _vlm_describe(data_url: str, prompt: str = "请详细描述这张图片的内容") -> str:
+    """用 langchain_openai 的 ChatOpenAI 调 VLM 识别图片内容。"""
+    client = _vlm_client()
+    msg = HumanMessage(
+        content=[
+            {"type": "text", "text": prompt},
+            {"type": "image_url", "image_url": {"url": data_url}},
+        ]
+    )
+    try:
+        resp = await client.ainvoke([msg])
+        return resp.content or ""
+    except Exception as e:
+        return f"图片识别失败: {e}"
 
 
 # ---------- 工具 1：天气查询（open-meteo，无需 key） ----------
@@ -72,10 +102,38 @@ async def _get_news(db, user, query: str = "") -> str:
 
 
 # ---------- 工具 3/4：文档读取与格式互转 ----------
+_IMAGE_TYPES = {"png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"}
+
+
+async def _recognize_document_image(doc) -> str:
+    """图片文档：从 MinIO 下载后用 VLM 识别内容。"""
+    import base64
+
+    from app.services import storage
+
+    try:
+        raw = storage.get_object(doc.stored_path)
+    except Exception as e:
+        return f"读取图片失败: {e}"
+
+    ext = (doc.file_type or "").lower()
+    mime = "jpeg" if ext in ("jpg", "jpeg") else (ext or "png")
+    data_url = f"data:image/{mime};base64,{base64.b64encode(raw).decode()}"
+
+    if not settings.BASE_VLM:
+        return "未配置 VLM 模型（BASE_VLM），无法识别图片"
+    return await _vlm_describe(data_url)
+
+
 async def _read_document(db, user, document_id: int = 0) -> str:
     doc = await db.get(Document, document_id)
     if not doc or doc.user_id != user.id:
         return "文档不存在或无权访问"
+
+    # 图片类型走 VLM 识别
+    if (doc.file_type or "").lower() in _IMAGE_TYPES:
+        return await _recognize_document_image(doc)
+
     text = doc.text_content or ""
     if not text:
         return "该文档暂无解析文本"
@@ -147,9 +205,6 @@ async def _convert_document(db, user, document_id: int = 0, target_format: str =
         result = _csv_to_json(text) if (doc.file_type or "") == "csv" else json.dumps({"content": text}, ensure_ascii=False, indent=2)
     else:
         return f"暂不支持转换到 {target}（支持 txt/md/csv/json）"
-
-    if len(result) > 6000:
-        result = result[:6000] + "\n...(内容过长已截断)"
     return result
 
 
@@ -159,27 +214,7 @@ async def _recognize_image(db, user, image_url: str = "", prompt: str = "请描�
         return "未提供图片地址（image_url）"
     if not settings.BASE_VLM:
         return "未配置 VLM 模型（BASE_VLM）"
-    payload = {
-        "model": settings.BASE_VLM,
-        "messages": [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": prompt},
-                    {"type": "image_url", "image_url": {"url": image_url}},
-                ],
-            }
-        ],
-    }
-    headers = {"Authorization": f"Bearer {settings.OPENAI_API_KEY}"}
-    async with httpx.AsyncClient(timeout=90.0) as client:
-        resp = await client.post(f"{settings.MODEL_API_BASE_URL.rstrip('/')}/chat/completions", json=payload, headers=headers)
-        resp.raise_for_status()
-        data = resp.json()
-    try:
-        return data["choices"][0]["message"]["content"] or ""
-    except (KeyError, IndexError):
-        return "图片识别失败"
+    return await _vlm_describe(image_url, prompt)
 
 
 # ---------- 工具 6：图片生成（IMAGE_MODEL） ----------

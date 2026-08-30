@@ -53,7 +53,7 @@ export const documentApi = {
 }
 
 // 流式对话（SSE）：返回 fetch Response，调用方用 ReadableStream 解析
-export function streamChat(convId, content) {
+export function streamChat(convId, content, signal) {
   const token = localStorage.getItem('access_token')
   return fetch(`/api/conversations/${convId}/messages/stream`, {
     method: 'POST',
@@ -62,5 +62,6 @@ export function streamChat(convId, content) {
       Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify({ content }),
+    signal,
   })
 }

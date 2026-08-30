@@ -55,10 +55,21 @@
               type="textarea"
               :rows="3"
               :autosize="{ minRows: 3, maxRows: 8 }"
-              placeholder="给 Easy WorkBuddy 发送消息"
+              placeholder="给 Easy WorkBuddy 发送消息，输入「@ + 空格」可引用资料库文件"
               class="msg-textarea"
-              @keydown.enter.exact.prevent="send"
+              @input="onInput"
+              @keydown="onTextareaKeydown"
             />
+            <!-- @ 引用资料库文件悬浮列表 -->
+            <div v-if="mentionVisible" class="mention-list">
+              <div v-for="(d, i) in mentionDocs" :key="d.id" class="mention-item"
+                :class="{ active: i === mentionIndex }" @mousedown.prevent="selectMention(d)">
+                <el-icon><Document /></el-icon>
+                <span class="m-name">{{ d.original_name }}</span>
+                <span class="m-type">{{ d.file_type }}</span>
+              </div>
+              <div v-if="!mentionDocs.length" class="mention-empty">资料库暂无文件</div>
+            </div>
             <div class="input-toolbar">
               <div class="left-tools">
                 <el-tooltip content="让 Agent 逐步、深入地推理后再回答" placement="top">
@@ -71,16 +82,19 @@
                     <el-icon><Search /></el-icon> 智能搜索
                   </span>
                 </el-tooltip>
-                <el-tooltip content="上传文档到资料库，可附带发送给 Agent" placement="top">
-                  <span class="tool-chip" :class="{ disabled: !wsId }" @click="triggerFile">
-                    <el-icon><Upload /></el-icon> 上传文档
+                <el-tooltip content="上传文件，可附带发送给 Agent" placement="top">
+                  <span class="tool-chip" @click="triggerFile">
+                    <el-icon><Upload /></el-icon> 上传文件
                   </span>
                 </el-tooltip>
-                <input ref="fileInput" type="file" hidden
-                  accept=".docx,.xlsx,.pdf,.txt,.md,.csv" @change="onFileChange" />
+                <input ref="fileInput" type="file" hidden @change="onFileChange" />
               </div>
-              <button class="send-btn" :class="{ disabled: !canSend }" :disabled="!canSend" @click="send">
+              <button v-if="!sending" class="send-btn" :class="{ disabled: !canSend }" :disabled="!canSend"
+                title="发送" @click="send">
                 <el-icon><Promotion /></el-icon>
+              </button>
+              <button v-else class="send-btn stop" title="停止生成" @click="stop">
+                <el-icon><VideoPause /></el-icon>
               </button>
             </div>
           </div>
@@ -139,6 +153,13 @@ const deepThink = ref(false)
 const webSearch = ref(false)
 const attachment = ref(null)
 const fileInput = ref(null)
+const abortController = ref(null)
+
+// @ 引用资料库文件
+const mentionDocs = ref([])
+const mentionVisible = ref(false)
+const mentionIndex = ref(0)
+const mentionRefs = ref([])
 
 const canSend = computed(() => (!!input.value.trim() || !!attachment.value) && !sending.value)
 
@@ -176,7 +197,6 @@ async function openConversation(c) {
 }
 
 function triggerFile() {
-  if (!store.activeId) return ElMessage.warning('请先到「工作空间」页激活一个空间')
   fileInput.value?.click()
 }
 
@@ -202,9 +222,67 @@ function buildContent(text) {
   if (webSearch.value) prefixes.push('[请优先使用搜索/新闻工具获取实时信息]')
   if (deepThink.value) prefixes.push('[请逐步、深入地思考后回答]')
   if (attachment.value) {
-    prefixes.push(`[用户上传了附件：${attachment.value.name}，document_id=${attachment.value.id}]`)
+    prefixes.push(`[用户上传了文件：${attachment.value.name}，document_id=${attachment.value.id}]`)
+  }
+  if (mentionRefs.value.length) {
+    prefixes.push(`[用户引用了文件：${mentionRefs.value.map((r) => `${r.name}(document_id=${r.id})`).join('、')}]`)
   }
   return prefixes.length ? prefixes.join('\n') + '\n\n' + text : text
+}
+
+// ---------- @ 引用资料库文件 ----------
+async function openMention() {
+  try {
+    mentionDocs.value = await documentApi.list()
+    mentionVisible.value = mentionDocs.value.length > 0
+    mentionIndex.value = 0
+  } catch {
+    mentionVisible.value = false
+  }
+}
+
+function onInput() {
+  // 输入「@ + 空格」时打开引用列表；否则关闭
+  if (input.value.endsWith('@ ')) {
+    openMention()
+  } else if (mentionVisible.value) {
+    mentionVisible.value = false
+  }
+}
+
+function selectMention(d) {
+  input.value = input.value.replace(/@\s*$/, `@${d.original_name} `)
+  mentionRefs.value.push({ id: d.id, name: d.original_name })
+  mentionVisible.value = false
+  mentionIndex.value = 0
+}
+
+function onTextareaKeydown(e) {
+  if (mentionVisible.value && mentionDocs.value.length) {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      mentionIndex.value = (mentionIndex.value + 1) % mentionDocs.value.length
+      return
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      mentionIndex.value = (mentionIndex.value - 1 + mentionDocs.value.length) % mentionDocs.value.length
+      return
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      selectMention(mentionDocs.value[mentionIndex.value])
+      return
+    }
+    if (e.key === 'Escape') {
+      mentionVisible.value = false
+      return
+    }
+  }
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault()
+    send()
+  }
 }
 
 // 展示文本：若消息附带图片，则过滤掉 URL/base64 地址，只保留描述文本
@@ -256,13 +334,16 @@ async function send() {
   messages.value.push({ role: 'user', content: text || `[附件] ${attachment.value?.name}` })
   input.value = ''
   attachment.value = null
+  mentionRefs.value = []
+  mentionVisible.value = false
   sending.value = true
+  abortController.value = new AbortController()
   const assistantMsg = reactive({ role: 'assistant', content: '', typing: true, tools: [], images: [] })
   messages.value.push(assistantMsg)
   scrollBottom(true)
 
   try {
-    const resp = await streamChat(currentId.value, content)
+    const resp = await streamChat(currentId.value, content, abortController.value.signal)
     if (!resp.ok) {
       assistantMsg.typing = false
       assistantMsg.content = '请求失败，请稍后重试'
@@ -283,11 +364,25 @@ async function send() {
         try { handleEvent(JSON.parse(line.slice(5).trim()), assistantMsg) } catch { /* ignore */ }
       }
     }
+  } catch (e) {
+    // 用户手动终止
+    if (e.name === 'AbortError') {
+      assistantMsg.typing = false
+      if (!assistantMsg.content) assistantMsg.content = '（已手动停止生成）'
+    } else {
+      assistantMsg.typing = false
+      if (!assistantMsg.content) assistantMsg.content = '请求异常，请稍后重试'
+    }
   } finally {
     sending.value = false
+    abortController.value = null
     assistantMsg.typing = false
     scrollBottom(true)
   }
+}
+
+function stop() {
+  abortController.value?.abort()
 }
 
 async function remove(c) {
@@ -361,6 +456,7 @@ onMounted(async () => {
 /* ===== 输入区：圆角高级感卡片，固定在底部 ===== */
 .chat-input { padding: 8px 20px 16px; flex-shrink: 0; }
 .input-box {
+  position: relative;
   background: var(--card-bg);
   border: 1px solid var(--border);
   border-radius: 22px;
@@ -381,6 +477,18 @@ html.dark .input-box:focus-within {
   border-color: #5b8dff;
   box-shadow: 0 0 0 3px rgba(64, 158, 255, 0.15), 0 4px 24px rgba(0, 0, 0, 0.45);
 }
+/* @ 引用文件悬浮列表 */
+.mention-list { position: absolute; left: 16px; right: 16px; bottom: 60px; z-index: 20;
+  max-height: 240px; overflow-y: auto; background: var(--card-bg); border: 1px solid var(--border);
+  border-radius: 12px; box-shadow: var(--shadow); padding: 6px; }
+.mention-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 8px;
+  cursor: pointer; font-size: 13px; }
+.mention-item.active { background: var(--primary-soft); color: var(--primary); }
+.mention-item:hover { background: var(--hover-bg); }
+.mention-item .el-icon { flex-shrink: 0; }
+.mention-item .m-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mention-item .m-type { font-size: 11px; color: var(--muted); }
+.mention-empty { padding: 12px; text-align: center; color: var(--muted); font-size: 13px; }
 .attach-chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px;
   background: var(--primary-soft); color: var(--primary); border-radius: 999px;
   font-size: 13px; margin-bottom: 8px; }
@@ -414,6 +522,8 @@ html.dark .input-box:focus-within {
   box-shadow: 0 4px 12px rgba(64, 158, 255, 0.35); transition: all 0.2s; }
 .send-btn:hover:not(.disabled) { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(64, 158, 255, 0.5); }
 .send-btn.disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
+.send-btn.stop { background: linear-gradient(135deg, #f56c6c, #ff4d4f); box-shadow: 0 4px 12px rgba(245, 108, 108, 0.35); }
+.send-btn.stop:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(245, 108, 108, 0.5); }
 
 /* 可用工具 tag：靠左对齐 */
 .input-hint { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 10px;

@@ -15,7 +15,6 @@ from app.services.storage import get_presigned_url, put_object
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
 
-ALLOWED = {"docx", "xlsx", "pdf", "txt", "md", "csv"}
 MAX_BYTES = 20 * 1024 * 1024  # 20 MB
 
 
@@ -54,8 +53,6 @@ async def upload(
     db: DBDep = None,
 ):
     ext = file.filename.rsplit(".", 1)[-1].lower()
-    if ext not in ALLOWED:
-        raise HTTPException(status_code=400, detail=f"不支持的文件类型: {ext}")
 
     data = await file.read()
     if len(data) > MAX_BYTES:
