@@ -5,6 +5,7 @@ import io
 import uuid
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi.responses import Response
 from sqlalchemy import select
 
 from app.core.response import ok
@@ -105,3 +106,24 @@ async def preview(doc_id: int, current: CurrentUser, db: DBDep):
         raise HTTPException(status_code=404, detail="文档不存在")
     url = get_presigned_url(doc.stored_path, expires_minutes=15)
     return ok({"url": url, "original_name": doc.original_name, "text": doc.text_content})
+
+
+@router.get("/download")
+async def download_file(key: str, filename: str = "download", current: CurrentUser = None):
+    """从 MinIO 下载文件（附件头，浏览器直接下载到本地）。"""
+    from urllib.parse import quote
+
+    from app.services import storage
+
+    # 安全校验：key 必须属于当前用户
+    if f"/u-{current.id}/" not in key:
+        raise HTTPException(status_code=403, detail="无权访问")
+    try:
+        raw = storage.get_object(key)
+    except Exception:
+        raise HTTPException(status_code=404, detail="文件不存在")
+    return Response(
+        content=raw,
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"},
+    )

@@ -38,6 +38,20 @@
                   </a>
                 </div>
               </div>
+
+              <!-- 文件转换结果：预览前两行 + 下载按钮 -->
+              <div v-if="m.files?.length" class="msg-files">
+                <div v-for="(f, fi) in m.files" :key="fi" class="file-card">
+                  <div class="file-head">
+                    <el-icon><Document /></el-icon>
+                    <span class="file-name">{{ f.filename }}</span>
+                    <a class="download-btn" @click="downloadFile(f)">
+                      <el-icon><Download /></el-icon> 下载
+                    </a>
+                  </div>
+                  <div v-if="f.preview" class="file-preview">{{ f.preview }}</div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -309,6 +323,9 @@ function handleEvent(evt, msg) {
     if (evt.data?.image) {
       if (!msg.images) msg.images = []
       msg.images.push(evt.data.image)
+    } else if (evt.data?.key) {
+      if (!msg.files) msg.files = []
+      msg.files.push(evt.data)
     } else if (evt.name === 'generate_image' && evt.result) {
       // 兼容旧后端：从文本结果解析图片 URL
       const m = evt.result.match(/https?:\/\/[^\s"']+/)
@@ -385,6 +402,28 @@ function stop() {
   abortController.value?.abort()
 }
 
+async function downloadFile(f) {
+  try {
+    const token = localStorage.getItem('access_token')
+    const resp = await fetch(
+      `/api/documents/download?key=${encodeURIComponent(f.key)}&filename=${encodeURIComponent(f.filename)}`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    )
+    if (!resp.ok) throw new Error('下载失败')
+    const blob = await resp.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = f.filename || 'download'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  } catch {
+    ElMessage.error('下载失败')
+  }
+}
+
 async function remove(c) {
   await ElMessageBox.confirm(`确定删除会话「${c.title}」吗？`, '提示', { type: 'warning' })
   await conversationApi.remove(c.id)
@@ -452,6 +491,17 @@ onMounted(async () => {
 .download-btn { display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px; margin: 8px;
   border-radius: 8px; background: var(--primary); color: #fff; font-size: 13px; text-decoration: none; }
 .download-btn:hover { opacity: 0.9; }
+
+/* 文件转换结果卡片 */
+.msg-files { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
+.file-card { border-radius: 12px; border: 1px solid var(--border); background: var(--card-bg); padding: 10px 12px; }
+.file-head { display: flex; align-items: center; gap: 8px; }
+.file-head .el-icon { color: var(--primary); }
+.file-name { flex: 1; font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-card .download-btn { margin: 0; }
+.file-preview { margin-top: 8px; font-size: 12px; color: var(--muted); font-family: monospace;
+  background: var(--hover-bg); border-radius: 8px; padding: 8px 10px; white-space: pre-wrap;
+  max-height: 60px; overflow: hidden; }
 
 /* ===== 输入区：圆角高级感卡片，固定在底部 ===== */
 .chat-input { padding: 8px 20px 16px; flex-shrink: 0; }
