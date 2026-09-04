@@ -144,7 +144,7 @@ npm run dev        # 启动 Vite 开发服务器
 - 除登录/注册外均需请求头 `Authorization: Bearer <access_token>`。
 - 在线文档（启动后端后）：`http://127.0.0.1:8000/docs`（Swagger UI）。
 
-## 常见问题
+## 常见问题-
 
 - **后端启动报 greenlet / aiomysql 错误**：请使用 `uv run` 启动（确保用项目 `.venv`），不要用系统裸 `python`。
 - **上传文档报错**：确认 MinIO 已启动且 `MINIO_ENDPOINT` 可达，`MINIO_BUCKET` 名称不含下划线。
