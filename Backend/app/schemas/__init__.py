@@ -193,6 +193,7 @@ class MessageOut(BaseModel):
     role: str
     content: str
     tokens: Optional[int] = None
+    attachments: Optional[str] = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -201,6 +202,7 @@ class MessageOut(BaseModel):
 class ChatIn(BaseModel):
     content: str = Field(..., min_length=1)
     model: Optional[str] = None
+    attachments: Optional[dict] = None  # {refs:[{id,name,file_type}], attachment:{name,id}}
 
 
 # ---------- 资料库 / 文档 ----------

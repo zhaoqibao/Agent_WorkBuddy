@@ -145,6 +145,8 @@ class Message(Base):
     role: Mapped[str] = mapped_column(String(16), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     tokens: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # JSON 字符串：{images: [image_key...], files: [{key, filename, preview}...]}，用于刷新后恢复图片/下载按钮
+    attachments: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), nullable=False)
 

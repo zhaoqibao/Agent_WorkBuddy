@@ -15,6 +15,7 @@ from app.deps import CurrentUser, DBDep
 from app.models import Agent, Conversation, Message
 from app.schemas import ChatIn, ConversationOut, ConversationCreate, MessageOut
 from app.services.agent import create_agent
+from app.services.storage import get_presigned_url
 
 router = APIRouter(prefix="/api/conversations", tags=["conversations"])
 
@@ -64,9 +65,24 @@ async def get_conversation(conv_id: int, current: CurrentUser, db: DBDep):
         select(Message).where(Message.conversation_id == conv_id)
         .order_by(Message.created_at)
     )).all()
+    out = []
+    for m in msgs:
+        d = MessageOut.model_validate(m).model_dump()
+        # 解析 attachments，把 image_key 转成可访问的图片 URL（刷新后可恢复展示）
+        if m.attachments:
+            try:
+                att = json.loads(m.attachments)
+                att["images"] = [
+                    {"key": k, "url": get_presigned_url(k, expires_minutes=60)}
+                    for k in att.get("images", [])
+                ]
+                d["attachments"] = att
+            except Exception:
+                d["attachments"] = None
+        out.append(d)
     return ok({
         "conversation": ConversationOut.model_validate(conv).model_dump(),
-        "messages": [MessageOut.model_validate(m).model_dump() for m in msgs],
+        "messages": out,
     })
 
 
@@ -86,6 +102,25 @@ async def delete_conversation(conv_id: int, current: CurrentUser, db: DBDep):
     return ok(message="已删除")
 
 
+def _attachment_hint(attachments: dict | None) -> str:
+    """把附件/开关信息转成给 LLM 的提示前缀（不持久化到 content）。"""
+    if not attachments:
+        return ""
+    parts = []
+    if attachments.get("web_search"):
+        parts.append("[请优先使用搜索/新闻工具获取实时信息]")
+    if attachments.get("deep_think"):
+        parts.append("[请逐步、深入地思考后回答]")
+    att = attachments.get("attachment")
+    if att:
+        parts.append(f"[用户上传了文件：{att.get('name')}，document_id={att.get('id')}]")
+    refs = attachments.get("refs") or []
+    if refs:
+        joined = "、".join(f"{r.get('name')}(document_id={r.get('id')})" for r in refs)
+        parts.append(f"[用户引用了文件：{joined}]")
+    return "\n".join(parts)
+
+
 async def _prepare(conv_id: int, body: ChatIn, current: CurrentUser, db: DBDep):
     """校验会话、加载 agent、保存用户消息、构建 langchain 消息上下文。"""
     conv = await db.get(Conversation, conv_id)
@@ -94,8 +129,18 @@ async def _prepare(conv_id: int, body: ChatIn, current: CurrentUser, db: DBDep):
 
     agent = await db.get(Agent, conv.agent_id) if conv.agent_id else None
 
-    db.add(Message(conversation_id=conv_id, role="user", content=body.content))
+    # 附件信息单独持久化，content 只存用户纯文本（刷新后不再显示 [用户上传了文件...] 字符串）
+    attachments_json = json.dumps(body.attachments, ensure_ascii=False) if body.attachments else None
+    hint = _attachment_hint(body.attachments)
+    msg = Message(
+        conversation_id=conv_id,
+        role="user",
+        content=body.content,
+        attachments=attachments_json,
+    )
+    db.add(msg)
     await db.commit()
+    await db.refresh(msg)
 
     history = (await db.scalars(
         select(Message).where(Message.conversation_id == conv_id)
@@ -106,7 +151,9 @@ async def _prepare(conv_id: int, body: ChatIn, current: CurrentUser, db: DBDep):
     lc_messages = []
     for m in history:
         if m.role == "user":
-            lc_messages.append(HumanMessage(content=m.content))
+            # 刚发送的这条用户消息：附加附件提示前缀给 LLM；历史消息用原始 content
+            content = f"{hint}\n\n{m.content}" if (m.id == msg.id and hint) else m.content
+            lc_messages.append(HumanMessage(content=content))
         elif m.role == "assistant":
             lc_messages.append(AIMessage(content=m.content))
 
@@ -144,6 +191,8 @@ async def send_message_stream(conv_id: int, body: ChatIn, current: CurrentUser, 
             agent = create_agent(system_prompt, model)
             config = {"configurable": {"user_id": current.id}}
             full = ""
+            image_keys = []   # 生成的图片 key（持久化用）
+            file_items = []   # 转换的文件信息（持久化用）
 
             async for ev in agent.astream_events(
                 {"messages": lc_messages}, config=config, version="v2"
@@ -160,27 +209,42 @@ async def send_message_stream(conv_id: int, body: ChatIn, current: CurrentUser, 
                 elif kind == "on_tool_end":
                     output = ev["data"].get("output")
                     content = output.content if hasattr(output, "content") else str(output)
-                    artifact = getattr(output, "artifact", None)
-                    data = artifact if isinstance(artifact, dict) else None
-                    # convert_document 返回 JSON（含对象 key）：解析出下载信息传给前端
-                    if name == "convert_document" and isinstance(content, str):
+                    data = None
+                    # 工具返回 JSON：解析出附件信息传给前端，并收集用于持久化
+                    if name in ("convert_document", "generate_image") and isinstance(content, str):
                         try:
                             info = json.loads(content)
-                            if isinstance(info, dict) and info.get("key"):
-                                data = {
-                                    "key": info["key"],
-                                    "filename": info.get("filename"),
-                                    "preview": info.get("preview"),
-                                }
+                            if isinstance(info, dict):
                                 content = info.get("message", content)
+                                if name == "convert_document" and info.get("key"):
+                                    item = {
+                                        "key": info["key"],
+                                        "filename": info.get("filename"),
+                                        "preview": info.get("preview"),
+                                    }
+                                    data = item
+                                    file_items.append(item)
+                                elif name == "generate_image" and info.get("image_key"):
+                                    key = info["image_key"]
+                                    data = {"image": {"key": key, "url": get_presigned_url(key, expires_minutes=60)}}
+                                    image_keys.append(key)
                         except Exception:
                             pass
                     yield _sse({"type": "tool_result", "name": name, "result": content, "data": data})
 
-            # 保存 assistant 最终回答
-            if full:
+            # 保存 assistant 最终回答（去掉开头/结尾空白）+ 附件信息（刷新后恢复图片/下载按钮）
+            if full or image_keys or file_items:
+                full = full.strip() if full else ""
+                attachments = None
+                if image_keys or file_items:
+                    attachments = json.dumps(
+                        {"images": image_keys, "files": file_items}, ensure_ascii=False
+                    )
                 async with SessionLocal() as s:
-                    s.add(Message(conversation_id=conv_id, role="assistant", content=full))
+                    s.add(Message(
+                        conversation_id=conv_id, role="assistant",
+                        content=full, attachments=attachments,
+                    ))
                     await s.commit()
             yield _sse({"type": "done", "content": full})
         except Exception as e:

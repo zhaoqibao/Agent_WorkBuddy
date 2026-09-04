@@ -120,6 +120,7 @@ CREATE TABLE IF NOT EXISTS `messages` (
   `role`            VARCHAR(16)  NOT NULL               COMMENT 'user / assistant / system',
   `content`         MEDIUMTEXT   NOT NULL               COMMENT '消息内容',
   `tokens`          INT          NULL     DEFAULT NULL  COMMENT 'token 消耗',
+  `attachments`     MEDIUMTEXT   NULL                   COMMENT 'JSON：图片/文件附件（刷新后恢复展示）',
   `created_at`      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `idx_conversation` (`conversation_id`, `created_at`),

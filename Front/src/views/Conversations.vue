@@ -21,6 +21,16 @@
         <div class="chat-box" ref="chatBox">
           <div v-for="(m, i) in messages" :key="i" class="msg" :class="m.role">
             <div class="msg-body">
+              <!-- 用户消息：真实展示引用的图片 / 文档 -->
+              <div v-if="m.role === 'user' && (m.refs?.length || m.attachment)" class="user-attachments">
+                <div v-for="(r, ri) in (m.refs || [])" :key="'r' + ri" class="user-ref">
+                  <img v-if="r.preview_url" :src="r.preview_url" class="user-ref-img" :alt="r.name" />
+                  <span v-else class="user-ref-doc"><el-icon><Document /></el-icon> {{ r.name }}</span>
+                </div>
+                <span v-if="m.attachment" class="user-ref-doc">
+                  <el-icon><Paperclip /></el-icon> {{ m.attachment.name }}
+                </span>
+              </div>
               <div v-if="m.tools?.length && !m.images?.length" class="tool-badges">
                 <span v-for="(t, ti) in m.tools" :key="ti" class="tool-badge">
                   {{ t.status === 'running' ? '🔧 调用' : '✅' }} {{ t.name }}
@@ -32,9 +42,9 @@
               <!-- 图片生成结果：悬挂展示 + 下载 -->
               <div v-if="m.images?.length" class="msg-images">
                 <div v-for="(img, ii) in m.images" :key="ii" class="img-card">
-                  <img :src="img" class="gen-img" alt="生成图片" />
-                  <a class="download-btn" :href="img" download="image.png" target="_blank">
-                    <el-icon><Download /></el-icon> 下载
+                  <img :src="img.url || img" class="gen-img" alt="生成图片" />
+                  <a class="download-btn" @click="downloadImage(img)">
+                    下载
                   </a>
                 </div>
               </div>
@@ -46,7 +56,7 @@
                     <el-icon><Document /></el-icon>
                     <span class="file-name">{{ f.filename }}</span>
                     <a class="download-btn" @click="downloadFile(f)">
-                      <el-icon><Download /></el-icon> 下载
+                      下载
                     </a>
                   </div>
                   <div v-if="f.preview" class="file-preview">{{ f.preview }}</div>
@@ -63,6 +73,13 @@
               <el-icon><Paperclip /></el-icon>
               <span class="name">{{ attachment.name }}</span>
               <span class="close" @click="attachment = null">×</span>
+            </div>
+            <!-- @ 引用的文件 tag（背景色标识） -->
+            <div v-if="mentionRefs.length" class="mention-tags">
+              <span v-for="(r, ri) in mentionRefs" :key="ri" class="mention-tag">
+                <el-icon><Document /></el-icon> {{ r.name }}
+                <span class="close" @click="mentionRefs.splice(ri, 1)">×</span>
+              </span>
             </div>
             <el-input
               v-model="input"
@@ -175,7 +192,7 @@ const mentionVisible = ref(false)
 const mentionIndex = ref(0)
 const mentionRefs = ref([])
 
-const canSend = computed(() => (!!input.value.trim() || !!attachment.value) && !sending.value)
+const canSend = computed(() => (!!input.value.trim() || !!attachment.value || !!mentionRefs.value.length) && !sending.value)
 
 async function loadAgents() {
   agents.value = await agentApi.list()
@@ -206,7 +223,32 @@ async function doCreate() {
 async function openConversation(c) {
   currentId.value = c.id
   const data = await conversationApi.detail(c.id)
-  messages.value = (data.messages || []).map((m) => ({ role: m.role, content: m.content }))
+  messages.value = (data.messages || []).map((m) => {
+    const msg = { role: m.role, content: m.content }
+    if (m.attachments) {
+      const att = typeof m.attachments === 'string' ? JSON.parse(m.attachments) : m.attachments
+      if (m.role === 'assistant') {
+        // AI 消息：恢复生成图片 / 转换文件下载按钮
+        if (att.images?.length) msg.images = att.images
+        if (att.files?.length) msg.files = att.files
+      } else if (m.role === 'user') {
+        // 用户消息：恢复引用文件 / 上传附件（真实展示，不显示字符串）
+        if (att.refs?.length) {
+          msg.refs = att.refs
+          // 图片引用：异步补预览地址
+          att.refs.forEach((r) => {
+            if (isImageType(r.file_type)) {
+              documentApi.preview(r.id)
+                .then((d) => { r.preview_url = d.url })
+                .catch(() => {})
+            }
+          })
+        }
+        if (att.attachment) msg.attachment = att.attachment
+      }
+    }
+    return msg
+  })
   scrollBottom(true)
 }
 
@@ -231,19 +273,6 @@ async function onFileChange(e) {
   }
 }
 
-function buildContent(text) {
-  const prefixes = []
-  if (webSearch.value) prefixes.push('[请优先使用搜索/新闻工具获取实时信息]')
-  if (deepThink.value) prefixes.push('[请逐步、深入地思考后回答]')
-  if (attachment.value) {
-    prefixes.push(`[用户上传了文件：${attachment.value.name}，document_id=${attachment.value.id}]`)
-  }
-  if (mentionRefs.value.length) {
-    prefixes.push(`[用户引用了文件：${mentionRefs.value.map((r) => `${r.name}(document_id=${r.id})`).join('、')}]`)
-  }
-  return prefixes.length ? prefixes.join('\n') + '\n\n' + text : text
-}
-
 // ---------- @ 引用资料库文件 ----------
 async function openMention() {
   try {
@@ -264,9 +293,22 @@ function onInput() {
   }
 }
 
-function selectMention(d) {
-  input.value = input.value.replace(/@\s*$/, `@${d.original_name} `)
-  mentionRefs.value.push({ id: d.id, name: d.original_name })
+function isImageType(t) {
+  return ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'].includes((t || '').toLowerCase())
+}
+
+async function selectMention(d) {
+  // 移除「@ 」触发符，引用内容以 tag 形式显示（不插入纯文本）
+  input.value = input.value.replace(/@\s*$/, '')
+  const ref = { id: d.id, name: d.original_name, file_type: d.file_type }
+  // 图片引用：拉取预览地址，便于用户对话框真实展示
+  if (isImageType(d.file_type)) {
+    try {
+      const data = await documentApi.preview(d.id)
+      ref.preview_url = data.url
+    } catch { /* 忽略预览失败 */ }
+  }
+  mentionRefs.value.push(ref)
   mentionVisible.value = false
   mentionIndex.value = 0
 }
@@ -308,6 +350,8 @@ function displayText(m) {
     t = t.replace(/!\[[^\]]*\]\([^)]*\)/g, '')
     t = t.replace(/\n{3,}/g, '\n\n').trim()
   }
+  // AI 回复开头常带换行，去掉开头空白，避免气泡顶部留白
+  if (m.role === 'assistant') t = t.replace(/^\s+/, '')
   return t
 }
 
@@ -347,8 +391,19 @@ function handleEvent(evt, msg) {
 async function send() {
   const text = input.value.trim()
   if (!canSend.value) return
-  const content = buildContent(text)
-  messages.value.push({ role: 'user', content: text || `[附件] ${attachment.value?.name}` })
+  // 附件/开关信息（传给后端：持久化 + 给 LLM 的提示），content 只存纯文本
+  const attachInfo = {
+    refs: [...mentionRefs.value].map((r) => ({ id: r.id, name: r.name, file_type: r.file_type })),
+    attachment: attachment.value ? { name: attachment.value.name, id: attachment.value.id } : null,
+    web_search: webSearch.value,
+    deep_think: deepThink.value,
+  }
+  messages.value.push({
+    role: 'user',
+    content: text,
+    refs: [...mentionRefs.value],
+    attachment: attachment.value ? { ...attachment.value } : null,
+  })
   input.value = ''
   attachment.value = null
   mentionRefs.value = []
@@ -360,7 +415,11 @@ async function send() {
   scrollBottom(true)
 
   try {
-    const resp = await streamChat(currentId.value, content, abortController.value.signal)
+    const resp = await streamChat(
+      currentId.value,
+      { content: text, attachments: attachInfo },
+      abortController.value.signal
+    )
     if (!resp.ok) {
       assistantMsg.typing = false
       assistantMsg.content = '请求失败，请稍后重试'
@@ -424,6 +483,29 @@ async function downloadFile(f) {
   }
 }
 
+function downloadImage(img) {
+  // 新格式（{key, url}）用后端下载接口；旧格式（纯 URL）直接 fetch 下载
+  if (img && typeof img === 'object' && img.key) {
+    downloadFile({ key: img.key, filename: 'image.png' })
+    return
+  }
+  const url = typeof img === 'string' ? img : img?.url
+  if (!url) return
+  fetch(url)
+    .then((r) => r.blob())
+    .then((blob) => {
+      const objectUrl = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = objectUrl
+      a.download = 'image.png'
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(objectUrl)
+    })
+    .catch(() => ElMessage.error('下载失败'))
+}
+
 async function remove(c) {
   await ElMessageBox.confirm(`确定删除会话「${c.title}」吗？`, '提示', { type: 'warning' })
   await conversationApi.remove(c.id)
@@ -484,11 +566,18 @@ onMounted(async () => {
 .tool-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
 .tool-badge { font-size: 12px; padding: 4px 10px; border-radius: 999px; background: var(--tool-bg); color: var(--tool-text); }
 
+/* 用户消息：引用文件真实展示 */
+.user-attachments { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; margin-bottom: 6px; }
+.user-ref-img { display: block; max-width: 240px; max-height: 180px; border-radius: 12px; border: 1px solid var(--border); }
+.user-ref-doc { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 10px;
+  background: var(--hover-bg); font-size: 13px; color: var(--text); max-width: 240px; }
+.user-ref-doc .el-icon { color: var(--primary); }
+
 /* 生成图片卡片 + 下载 */
 .msg-images { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
 .img-card { border-radius: 14px; overflow: hidden; border: 1px solid var(--border); background: var(--card-bg); }
 .gen-img { display: block; width: 100%; max-width: 360px; height: auto; }
-.download-btn { display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px; margin: 8px;
+.download-btn { cursor: pointer; display: inline-flex; justify-content: center; align-items: center; gap: 4px; padding: 6px 12px; margin: 8px;
   border-radius: 8px; background: var(--primary); color: #fff; font-size: 13px; text-decoration: none; }
 .download-btn:hover { opacity: 0.9; }
 
@@ -545,6 +634,14 @@ html.dark .input-box:focus-within {
 .attach-chip .name { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .attach-chip .close { cursor: pointer; opacity: 0.6; font-size: 16px; line-height: 1; padding: 0 2px; }
 .attach-chip .close:hover { opacity: 1; }
+
+/* @ 引用文件 tag */
+.mention-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.mention-tag { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px;
+  background: rgba(124, 77, 255, 0.14); color: #7c4dff; border: 1px solid rgba(124, 77, 255, 0.3);
+  border-radius: 999px; font-size: 13px; }
+.mention-tag .close { cursor: pointer; opacity: 0.6; font-size: 15px; line-height: 1; padding: 0 2px; }
+.mention-tag .close:hover { opacity: 1; }
 
 /* textarea 透明无边框，融入卡片 */
 .msg-textarea :deep(.el-textarea__inner) {

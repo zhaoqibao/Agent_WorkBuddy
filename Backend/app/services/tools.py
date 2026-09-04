@@ -336,8 +336,8 @@ async def recognize_image(image_url: str, prompt: str = "请描述这张图片�
 
 # ---------- 工具 6：图片生成 ----------
 @tool
-async def generate_image(prompt: str, size: str = "1024x1024"):
-    """根据文字描述生成一张图片，生成结果会直接展示在对话中。
+async def generate_image(prompt: str, size: str = "1024x1024", config: RunnableConfig = None):
+    """根据文字描述生成一张图片，生成结果会直接展示在对话中（并保存到对象存储，刷新后仍可查看/下载）。
 
     当用户要求画图、生成图片、创作图像时调用。
 
@@ -345,10 +345,14 @@ async def generate_image(prompt: str, size: str = "1024x1024"):
         prompt: 图片的文字描述，尽量详细
         size: 图片尺寸，如 1024x1024、1328x1328 等
     """
+    import base64
+    import uuid
+
     if not prompt:
-        return "未提供图片描述（prompt）", None
+        return "未提供图片描述（prompt）"
     if not settings.IMAGE_MODEL:
-        return "未配置图片生成模型（IMAGE_MODEL）", None
+        return "未配置图片生成模型（IMAGE_MODEL）"
+
     payload = {"model": settings.IMAGE_MODEL, "prompt": prompt, "size": size, "n": 1}
     headers = {"Authorization": f"Bearer {settings.OPENAI_API_KEY}"}
     async with httpx.AsyncClient(timeout=120.0) as client:
@@ -363,13 +367,33 @@ async def generate_image(prompt: str, size: str = "1024x1024"):
         item = data["data"][0]
         b64 = item.get("b64_json")
         url = item.get("url")
-        if b64:
-            return "已生成图片，展示在对话中", {"image": f"data:image/png;base64,{b64}"}
-        if url:
-            return "已生成图片，展示在对话中", {"image": url}
-        return "图片生成失败", None
     except (KeyError, IndexError):
-        return "图片生成失败", None
+        return "图片生成失败"
+
+    # 下载图片字节（base64 或 url）
+    img_bytes = None
+    if b64:
+        img_bytes = base64.b64decode(b64)
+    elif url:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            r = await client.get(url)
+            r.raise_for_status()
+            img_bytes = r.content
+    if not img_bytes:
+        return "图片生成失败"
+
+    # 保存到 MinIO（持久，刷新后可恢复）
+    from app.services import storage
+
+    uid = _uid(config)
+    key = f"generated/u-{uid}/{uuid.uuid4().hex}.png"
+    storage.put_object(key, img_bytes, len(img_bytes), "image/png")
+
+    info = {
+        "message": "已生成图片，展示在对话中。",
+        "image_key": key,
+    }
+    return json.dumps(info, ensure_ascii=False)
 
 
 # ---------- 工具集合 ----------
