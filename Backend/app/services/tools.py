@@ -12,6 +12,7 @@ import base64
 import csv
 import io
 import json
+import datetime
 
 import httpx
 from langchain_core.messages import HumanMessage
@@ -45,6 +46,17 @@ async def _vlm_describe(data_url: str, prompt: str) -> str:
         return resp.content or ""
     except Exception as e:
         return f"图片识别失败: {e}"
+
+
+# ---------- 工具 0：获取时间 ----------
+@tool
+def get_current_time():
+  """
+  获取当前时间
+  当用户询问内容涉及时间时调用此工具。
+  """
+  current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+  return current_time
 
 
 # ---------- 工具 1：天气查询 ----------
@@ -406,4 +418,5 @@ def get_agent_tools() -> list:
         convert_document,
         recognize_image,
         generate_image,
+        get_current_time
     ]

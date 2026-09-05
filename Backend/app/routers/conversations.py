@@ -167,7 +167,7 @@ async def send_message(conv_id: int, body: ChatIn, current: CurrentUser, db: DBD
     """非流式对话（兼容保留）。"""
     conv, lc_messages, system_prompt, model = await _prepare(conv_id, body, current, db)
     try:
-        agent = create_agent(system_prompt, model)
+        agent = await create_agent(system_prompt, model)
         res = await agent.ainvoke(
             {"messages": lc_messages},
             config={"configurable": {"user_id": current.id}},
@@ -188,7 +188,7 @@ async def send_message_stream(conv_id: int, body: ChatIn, current: CurrentUser, 
 
     async def event_gen():
         try:
-            agent = create_agent(system_prompt, model)
+            agent = await create_agent(system_prompt, model)
             config = {"configurable": {"user_id": current.id}}
             full = ""
             image_keys = []   # 生成的图片 key（持久化用）

@@ -36,7 +36,9 @@
                   {{ t.status === 'running' ? '🔧 调用' : '✅' }} {{ t.name }}
                 </span>
               </div>
-              <div class="bubble" v-if="displayText(m)">{{ displayText(m) }}</div>
+              <div class="bubble md" v-if="displayText(m) && m.role === 'assistant'"
+                v-html="renderMarkdown(displayText(m))"></div>
+              <div class="bubble" v-else-if="displayText(m)">{{ displayText(m) }}</div>
               <div class="bubble typing" v-else-if="m.typing"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
 
               <!-- 图片生成结果：悬挂展示 + 下载 -->
@@ -166,8 +168,21 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 import { agentApi, conversationApi, documentApi, streamChat } from '@/api'
 import { useWorkspaceStore } from '@/stores/workspace'
+
+// markdown 渲染（支持标题/列表/代码块/表格/链接等），DOMPurify 防 XSS
+marked.setOptions({ gfm: true, breaks: true })
+function renderMarkdown(text) {
+  if (!text) return ''
+  try {
+    return DOMPurify.sanitize(marked.parse(text))
+  } catch {
+    return text
+  }
+}
 
 const store = useWorkspaceStore()
 const agents = ref([])
@@ -360,9 +375,16 @@ function handleEvent(evt, msg) {
     msg.typing = false
     msg.content += evt.content
   } else if (evt.type === 'tool') {
-    msg.tools.push({ name: evt.name, status: 'running' })
+    // 同工具重复调用不重复列 tag：已存在则将状态重置为 running
+    const existing = msg.tools.find((x) => x.name === evt.name)
+    if (existing) {
+      existing.status = 'running'
+    } else {
+      msg.tools.push({ name: evt.name, status: 'running' })
+    }
   } else if (evt.type === 'tool_result') {
-    const t = msg.tools.find((x) => x.name === evt.name && x.status === 'running')
+    // 找同工具设 done（不限状态，处理同工具连续 start/end）
+    const t = msg.tools.find((x) => x.name === evt.name)
     if (t) t.status = 'done'
     if (evt.data?.image) {
       if (!msg.images) msg.images = []
@@ -563,6 +585,36 @@ onMounted(async () => {
   white-space: pre-wrap; word-break: break-word; }
 .msg.user .bubble { background: var(--primary); color: #fff; border-bottom-right-radius: 4px; }
 .msg.assistant .bubble { border-bottom-left-radius: 4px; }
+
+/* ===== markdown 渲染样式（assistant 消息）===== */
+.bubble.md { white-space: normal; }
+.bubble.md > :first-child { margin-top: 0; }
+.bubble.md > :last-child { margin-bottom: 0; }
+.bubble.md p { margin: 0 0 8px; }
+.bubble.md h1, .bubble.md h2, .bubble.md h3, .bubble.md h4, .bubble.md h5, .bubble.md h6 {
+  margin: 14px 0 6px; font-weight: 600; line-height: 1.4; }
+.bubble.md h1 { font-size: 20px; }
+.bubble.md h2 { font-size: 18px; }
+.bubble.md h3 { font-size: 16px; }
+.bubble.md h4 { font-size: 15px; }
+.bubble.md ul, .bubble.md ol { margin: 4px 0 10px; padding-left: 22px; }
+.bubble.md li { margin: 3px 0; }
+.bubble.md li > ul, .bubble.md li > ol { margin: 2px 0; }
+.bubble.md code { padding: 2px 6px; border-radius: 5px; background: var(--hover-bg);
+  font-family: 'JetBrains Mono', Consolas, monospace; font-size: 0.9em; }
+.bubble.md pre { margin: 8px 0; padding: 12px 14px; border-radius: 10px; overflow-x: auto;
+  background: var(--code-bg, #1e1e2e); }
+.bubble.md pre code { padding: 0; background: transparent; font-size: 13px; line-height: 1.6; }
+.bubble.md blockquote { margin: 8px 0; padding: 4px 12px; border-left: 3px solid var(--primary);
+  color: var(--muted); }
+.bubble.md a { color: var(--primary); text-decoration: none; }
+.bubble.md a:hover { text-decoration: underline; }
+.bubble.md hr { margin: 12px 0; border: none; border-top: 1px solid var(--border); }
+.bubble.md table { border-collapse: collapse; margin: 8px 0; max-width: 100%; display: block; overflow-x: auto; }
+.bubble.md th, .bubble.md td { border: 1px solid var(--border); padding: 6px 12px; text-align: left; }
+.bubble.md th { background: var(--hover-bg); font-weight: 600; }
+.bubble.md img { max-width: 100%; border-radius: 8px; }
+.bubble.md strong { font-weight: 600; }
 .tool-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
 .tool-badge { font-size: 12px; padding: 4px 10px; border-radius: 999px; background: var(--tool-bg); color: var(--tool-text); }
 

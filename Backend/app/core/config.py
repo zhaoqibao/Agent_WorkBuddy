@@ -113,6 +113,9 @@ class Settings(BaseSettings):
     MILVUS_COLLECTION_NAME: str = "easy_workbuddy"
     TAVILY_SEARCH_KEY: str = ""
 
+    # ---- 途牛开放平台（旅游 MCP 服务）----
+    TUNIU_API_KEY: str = ""
+
     # ---- 计算属性 ----
     @property
     def database_url(self) -> str:
