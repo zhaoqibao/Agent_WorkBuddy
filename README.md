@@ -135,7 +135,7 @@ npm run dev        # 启动 Vite 开发服务器
 
 ### 4. 登录使用
 
-打开 `http://localhost:5173`，注册账号即可体验。本地联调已存在测试账号：`admin / admin`。
+打开 `http://localhost:5173`，注册账号即可体验。本地联调已存在测试账号：`admin123 / admin123`。
 
 ## 接口约定
 

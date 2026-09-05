@@ -1,0 +1,30 @@
+# ===== 敏感信息（密钥不进镜像）=====
+.env
+**/.env
+
+# ===== Git =====
+.git
+.gitignore
+
+# ===== Python =====
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+
+# ===== Node / 前端 =====
+node_modules/
+Front/node_modules/
+Front/dist/
+dist/
+
+# ===== 日志 / 运行时 / IDE =====
+logs/
+*.log
+.workbuddy/
+.idea/
+.vscode/
+
+# ===== 临时/测试 =====
+.pytest_cache/
